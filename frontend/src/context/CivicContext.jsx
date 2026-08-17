@@ -12,7 +12,8 @@ import {
   registerUser,
   getMe,
   fetchNotificationsApi,
-  markNotificationReadApi
+  markNotificationReadApi,
+  fetchRegisteredUsersApi
 } from "../services/api";
 
 const CivicContext = createContext();
@@ -333,7 +334,8 @@ export function CivicProvider({ children }) {
         uploadResolutionProof,
         verifyIssueResolution,
         markNotificationRead,
-        refreshData
+        refreshData,
+        fetchRegisteredUsers: fetchRegisteredUsersApi
       }}
     >
       {children}

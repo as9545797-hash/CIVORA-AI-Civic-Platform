@@ -185,3 +185,47 @@ def test_12_notifications():
     read_res = client.put(f"/api/notifications/{target_notif['id']}/read")
     assert read_res.status_code == 200
     assert read_res.json()["is_read"] is True
+
+
+def test_admin_registered_citizens_endpoint():
+    # 1. Unauthenticated Request -> 401 Unauthorized
+    unauth_res = client.get("/api/admin/users")
+    assert unauth_res.status_code == 401, "Unauthenticated access must be blocked"
+
+    # 2. Citizen Request -> 403 Forbidden
+    citizen_login = client.post(
+        "/api/auth/login",
+        json={"email": "citizen@civora.in", "password": "citizen123"}
+    )
+    assert citizen_login.status_code == 200
+    citizen_token = citizen_login.json()["access_token"]
+
+    forbidden_res = client.get("/api/admin/users", headers={"Authorization": f"Bearer {citizen_token}"})
+    assert forbidden_res.status_code == 403, "Normal citizen access must be blocked with 403 Forbidden"
+
+    # 3. Admin Request -> 200 OK
+    admin_login = client.post(
+        "/api/auth/login",
+        json={"email": "admin@civora.gov.in", "password": "admin123"}
+    )
+    assert admin_login.status_code == 200
+    admin_token = admin_login.json()["access_token"]
+
+    admin_res = client.get("/api/admin/users", headers={"Authorization": f"Bearer {admin_token}"})
+    assert admin_res.status_code == 200
+    users_list = admin_res.json()
+    assert isinstance(users_list, list)
+    assert len(users_list) > 0, "Should return registered citizens"
+
+    # 4. Verify safety and privacy: check fields
+    for u in users_list:
+        assert "id" in u
+        assert "full_name" in u
+        assert "email" in u
+        assert "district" in u
+        assert "created_at" in u
+        assert "complaint_count" in u
+        assert "hashed_password" not in u, "hashed_password MUST NOT be returned"
+        assert "password" not in u, "password MUST NOT be returned"
+        assert "access_token" not in u, "token MUST NOT be returned"
+

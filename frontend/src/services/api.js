@@ -218,3 +218,17 @@ export async function markNotificationReadApi(notificationId) {
   if (!res.ok) return null;
   return res.json();
 }
+
+// ================= ADMIN APIs =================
+
+export async function fetchRegisteredUsersApi() {
+  const res = await fetch(`${API_URL}/admin/users`, {
+    headers: getAuthHeaders()
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({ detail: "Failed to fetch registered citizens" }));
+    throw new Error(errorData.detail || "Failed to fetch registered citizens");
+  }
+  return res.json();
+}
+

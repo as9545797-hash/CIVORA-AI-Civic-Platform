@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { useCivic } from "../context/CivicContext";
 import CivicMap from "../components/CivicMap";
@@ -9,7 +9,9 @@ function AdminDashboard() {
     assignIssue,
     updateIssueStatus,
     uploadResolutionProof,
-    backendOnline
+    backendOnline,
+    userRole,
+    fetchRegisteredUsers
   } = useCivic();
 
   const totalCount = issues.length;
@@ -24,6 +26,74 @@ function AdminDashboard() {
   const [proofUrl, setProofUrl] = useState("");
   const [actionSuccess, setActionSuccess] = useState(null);
   const [actionError, setActionError] = useState(null);
+
+  // Registered Citizens state
+  const [citizens, setCitizens] = useState([]);
+  const [citizensLoading, setCitizensLoading] = useState(true);
+  const [citizensError, setCitizensError] = useState(null);
+  const [citizenSearch, setCitizenSearch] = useState("");
+
+  // Load Registered Citizens from Backend API
+  const loadCitizens = useCallback(async () => {
+    setCitizensLoading(true);
+    setCitizensError(null);
+    try {
+      const data = await fetchRegisteredUsers();
+      if (Array.isArray(data)) {
+        setCitizens(data);
+      } else {
+        setCitizens([]);
+      }
+    } catch (err) {
+      console.warn("Failed to fetch registered citizens:", err.message);
+      setCitizensError(err.message || "Failed to load registered citizens");
+    } finally {
+      setCitizensLoading(false);
+    }
+  }, [fetchRegisteredUsers]);
+
+  useEffect(() => {
+    if (userRole === "admin") {
+      loadCitizens();
+    }
+  }, [userRole, loadCitizens]);
+
+  // Filter citizens by search term
+  const filteredCitizens = citizens.filter((c) => {
+    if (!citizenSearch) return true;
+    const q = citizenSearch.toLowerCase();
+    return (
+      (c.full_name && c.full_name.toLowerCase().includes(q)) ||
+      (c.email && c.email.toLowerCase().includes(q)) ||
+      (c.district && c.district.toLowerCase().includes(q)) ||
+      (c.phone && c.phone.toLowerCase().includes(q))
+    );
+  });
+
+  // Security Protection: Restrict view for non-admin users
+  if (userRole !== "admin") {
+    return (
+      <div className="admin-page">
+        <div className="admin-header">
+          <div>
+            <p className="admin-label">CIVORA • RESTRICTED PORTAL</p>
+            <h1>Admin Command Center Access Required</h1>
+            <p className="admin-subtitle">
+              Only authorized Government/Admin users are permitted to view registered citizens and command metrics.
+            </p>
+          </div>
+        </div>
+
+        <div className="action-banner rejected" style={{ marginBottom: "1.5rem" }}>
+          🔒 Access Denied: You must be logged in as a Government/Admin officer to view this section.
+        </div>
+
+        <Link to="/" className="primary-btn" style={{ display: "inline-block" }}>
+          ← Back to Home Page
+        </Link>
+      </div>
+    );
+  }
 
   // Department Assignment Handler
   const handleConfirmAssign = async () => {
@@ -61,7 +131,7 @@ function AdminDashboard() {
           <p className="admin-label">CIVORA • GOVERNMENT COMMAND CENTER</p>
           <h1>Civic Intelligence Dashboard</h1>
           <p className="admin-subtitle">
-            Monitor, prioritize, assign departments, and resolve civic complaints across Jharkhand districts.
+            Monitor, prioritize, assign departments, and manage registered citizens across Jharkhand districts.
           </p>
         </div>
 
@@ -132,6 +202,100 @@ function AdminDashboard() {
             <small>77% resolution rate</small>
           </div>
         </div>
+
+        <div className="admin-stat-card">
+          <div className="admin-stat-icon">👥</div>
+          <div>
+            <span>Registered Citizens</span>
+            <strong>{citizens.length}</strong>
+            <small>Active user accounts</small>
+          </div>
+        </div>
+      </div>
+
+      {/* REGISTERED CITIZENS SECTION */}
+      <div className="admin-panel citizens-panel" style={{ marginBottom: "25px" }}>
+        <div className="panel-header" style={{ flexWrap: "wrap", gap: "15px" }}>
+          <div>
+            <h2>👥 Registered Citizens</h2>
+            <p>Complete directory of citizens registered in CIVORA platform.</p>
+          </div>
+
+          <div className="citizens-controls" style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+            <input
+              type="text"
+              placeholder="🔍 Search name, email, district..."
+              className="search-input"
+              value={citizenSearch}
+              onChange={(e) => setCitizenSearch(e.target.value)}
+              style={{
+                padding: "8px 14px",
+                borderRadius: "10px",
+                border: "1px solid #cce3d7",
+                fontSize: "14px",
+                outline: "none",
+                minWidth: "220px"
+              }}
+            />
+            <button
+              className="secondary-btn"
+              onClick={loadCitizens}
+              disabled={citizensLoading}
+              style={{ padding: "8px 14px", fontSize: "13px" }}
+            >
+              🔄 Refresh
+            </button>
+          </div>
+        </div>
+
+        {citizensLoading ? (
+          <div className="loading-state" style={{ padding: "40px", textAlign: "center", color: "#65756b" }}>
+            <p>⏳ Loading registered citizens from database...</p>
+          </div>
+        ) : citizensError ? (
+          <div className="action-banner rejected" style={{ margin: "15px 0" }}>
+            ⚠️ {citizensError}
+          </div>
+        ) : filteredCitizens.length === 0 ? (
+          <div className="empty-state" style={{ padding: "40px", textAlign: "center", color: "#65756b" }}>
+            <p style={{ fontSize: "18px", fontWeight: "600" }}>No registered citizens found.</p>
+          </div>
+        ) : (
+          <div className="citizens-table-wrapper" style={{ overflowX: "auto" }}>
+            <table className="citizens-table">
+              <thead>
+                <tr>
+                  <th>👤 Citizen Name</th>
+                  <th>📧 Email</th>
+                  <th>📞 Phone</th>
+                  <th>📍 District</th>
+                  <th>📅 Joined</th>
+                  <th>📝 Complaints</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredCitizens.map((c) => (
+                  <tr key={c.id}>
+                    <td>
+                      <strong>{c.full_name}</strong>
+                    </td>
+                    <td>{c.email}</td>
+                    <td>{c.phone || "Not Provided"}</td>
+                    <td>
+                      <span className="district-badge">📍 {c.district || "Ranchi"}</span>
+                    </td>
+                    <td>{c.created_at ? c.created_at.split(" ")[0] : "N/A"}</td>
+                    <td>
+                      <span className="complaint-count-badge">
+                        📝 {c.complaint_count} {c.complaint_count === 1 ? "Complaint" : "Complaints"}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* PRIORITY QUEUE + BREAKDOWN */}

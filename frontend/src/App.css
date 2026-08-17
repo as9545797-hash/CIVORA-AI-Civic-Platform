@@ -619,7 +619,7 @@ body {
 
 .admin-stats {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: 20px;
   margin-bottom: 30px;
 }
@@ -756,6 +756,60 @@ body {
 
 .assign-btn:hover {
   background: #065d35;
+}
+
+/* =========================
+   REGISTERED CITIZENS TABLE
+========================= */
+
+.citizens-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 15px;
+  text-align: left;
+}
+
+.citizens-table th {
+  background: #f0f7f3;
+  color: #123524;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 14px 18px;
+  border-bottom: 2px solid #dcece2;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.citizens-table td {
+  padding: 16px 18px;
+  border-bottom: 1px solid #edf2ee;
+  color: #2c3e35;
+  font-size: 14px;
+  vertical-align: middle;
+}
+
+.citizens-table tbody tr:hover {
+  background: #f8faf8;
+}
+
+.district-badge {
+  display: inline-block;
+  background: #e3f2fd;
+  color: #1565c0;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.complaint-count-badge {
+  display: inline-block;
+  background: #e8f5e9;
+  color: #2e7d32;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 /* =========================
