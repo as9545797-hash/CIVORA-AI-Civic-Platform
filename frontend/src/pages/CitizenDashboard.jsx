@@ -36,7 +36,7 @@ function CitizenDashboard() {
 
       {!backendOnline && (
         <div className="action-banner rejected" style={{ marginBottom: "1.5rem" }}>
-          ⚠️ Backend server (http://localhost:8000) is offline. Showing cached local complaints.
+          ⚠️ Backend server (https://civora-backend-omxf.onrender.com) is offline. Showing cached local complaints.
         </div>
       )}
 
