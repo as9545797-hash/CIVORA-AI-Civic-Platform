@@ -100,16 +100,18 @@ class CitizenVerification(BaseModel):
     rating: Optional[int] = 5
     feedback: Optional[str] = ""
 
-# AI Prediction Schema (Matching Member 1's OpenAPI doc)
+# AI Prediction Schema (Matching CIVORA specification)
 class AIPredictResponse(BaseModel):
-    is_civic_issue: bool
-    issue: Optional[str]
+    is_civic_issue: bool = True
+    issue: Optional[str] = "Not a Civic Issue"
+    category: Optional[str] = None
     confidence: float
     priority: Optional[str] = None
     department: Optional[str] = None
-    duplicate_group: Optional[str] = None
+    reason: Optional[str] = None
     message: Optional[str] = None
-    category: Optional[str] = None
+    duplicate_group: Optional[str] = None
+    analysis_time_seconds: Optional[float] = None
 
 # Notification Schema
 class NotificationResponse(BaseModel):

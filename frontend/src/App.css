@@ -387,21 +387,6 @@ body {
   border-radius: 18px;
 }
 
-.ai-result.rejected-result {
-  background: #fff5f5;
-  border-color: #fecaca;
-}
-
-.ai-result.rejected-result .ai-result-header h2 {
-  color: #b42318;
-}
-
-.rejection-message {
-  color: #7a271a;
-  line-height: 1.6;
-  margin: 0;
-}
-
 .ai-result-header {
   display: flex;
   align-items: center;

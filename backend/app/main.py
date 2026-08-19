@@ -7,6 +7,7 @@ from .database import engine, Base, SessionLocal
 from .models import User, Complaint, TimelineEvent
 from .auth import hash_password
 from .routers import auth_router, complaints_router, ai_router, notifications_router
+from .ai_engine import load_ai_models
 
 # Create Database tables
 Base.metadata.create_all(bind=engine)
@@ -17,16 +18,13 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS configuration
+# Dynamic CORS configuration supporting environment variable CORS_ORIGINS
+raw_cors = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://localhost:8000")
+allowed_origins = [origin.strip() for origin in raw_cors.split(",") if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:3000",
-        "http://localhost:8000",
-        "*"
-    ],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -169,3 +167,4 @@ seed_database()
 @app.on_event("startup")
 def startup_event():
     seed_database()
+    load_ai_models()

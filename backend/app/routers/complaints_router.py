@@ -16,23 +16,20 @@ from ..schemas import (
     TimelineEventSchema
 )
 from ..auth import get_current_user
-from ..ai_engine import run_civora_ai, find_duplicate, ISSUE_TO_CATEGORY, SUPPORTED_ISSUES
+from ..ai_engine import run_civora_ai, find_duplicate
 
 router = APIRouter(prefix="/api/complaints", tags=["Complaints"])
 
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-SUPPORTED_CATEGORIES = {"road", "garbage", "streetlight"}
-
 CATEGORY_LABEL_MAP = {
     "road": "🕳️ Road / Pothole",
     "garbage": "🗑️ Garbage / Waste",
     "streetlight": "💡 Streetlight / Electrical",
-    # Legacy labels for existing records
     "water": "🚰 Water Leakage / Drainage",
     "public-space": "🌳 Public Space / Parks",
-    "other": "📌 Other Civic Issue",
+    "other": "📌 Other Civic Issue"
 }
 
 PREFIX_MAP = {
@@ -41,7 +38,7 @@ PREFIX_MAP = {
     "streetlight": "STL",
     "water": "WTR",
     "public-space": "PRK",
-    "other": "CIV",
+    "other": "CIV"
 }
 
 def format_complaint_dict(c: Complaint) -> dict:
@@ -84,7 +81,7 @@ def format_complaint_dict(c: Complaint) -> dict:
 async def create_complaint(
     title: Optional[str] = Form(None),
     description: Optional[str] = Form(None),
-    category: Optional[str] = Form("road"),
+    category: Optional[str] = Form("other"),
     district: Optional[str] = Form("Ranchi"),
     ward: Optional[str] = Form("Ward 1"),
     location: Optional[str] = Form("Ranchi, Jharkhand"),
@@ -94,12 +91,6 @@ async def create_complaint(
     current_user: Optional[User] = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-
-    if category not in SUPPORTED_CATEGORIES:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Unsupported category. CIVORA only accepts pothole, garbage, and streetlight reports.",
-        )
 
     # 1. Save photo if uploaded
     image_url = None
@@ -115,77 +106,29 @@ async def create_complaint(
         image_url = "https://images.unsplash.com/photo-1541888946425-d0fbb186a5b7?auto=format&fit=crop&w=800&q=80"
 
     # 2. Run AI Prediction Engine
-    ai_result = None
+    ai_result = {"issue": None, "confidence": 0.95, "priority": "Medium", "department": "General Municipal Department"}
     if saved_file_path and os.path.exists(saved_file_path):
         ai_result = run_civora_ai(saved_file_path)
 
-        if not ai_result.get("is_civic_issue"):
-            if os.path.exists(saved_file_path):
-                try:
-                    os.remove(saved_file_path)
-                except Exception:
-                    pass
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=ai_result.get(
-                    "message",
-                    "This image does not appear to contain a supported civic issue.",
-                ),
-            )
-
-    if ai_result and ai_result.get("is_civic_issue"):
-        detected_issue = ai_result.get("issue")
-        detected_category = ai_result.get("category") or ISSUE_TO_CATEGORY.get(detected_issue or "")
-        final_category = detected_category if detected_category in SUPPORTED_CATEGORIES else category
-        final_priority = ai_result.get("priority")
-        final_dept = ai_result.get("department")
-        confidence_value = ai_result.get("confidence", 0.0)
-    else:
-        # Manual submission without an uploaded photo (existing fallback flow).
-        issue_names = {
-            "road": "Pothole",
-            "garbage": "Garbage",
-            "streetlight": "Streetlight",
-        }
-        detected_issue = issue_names.get(category, "Civic Issue")
-        final_category = category
-        final_priority = "Medium"
-        final_dept = SUPPORTED_ISSUES.get(detected_issue) or {
-            "road": "PWD",
-            "garbage": "Municipal Sanitation Department",
-            "streetlight": "Electrical Wing",
-        }.get(category, "PWD")
-        confidence_value = 0.0
-
-    if final_category not in SUPPORTED_CATEGORIES:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Unsupported category. CIVORA only accepts pothole, garbage, and streetlight reports.",
-        )
-
+    detected_issue = ai_result.get("issue") or category
     final_title = title or (f"{detected_issue} Reported" if detected_issue else "Civic Issue Reported")
-
-    if not final_priority or not final_dept:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="AI could not determine priority and department for this image.",
-        )
-
-    confidence_str = f"{int(confidence_value * 100)}%" if isinstance(confidence_value, float) and confidence_value > 0 else ("N/A" if confidence_value == 0 else str(confidence_value))
+    final_priority = ai_result.get("priority") or "Medium"
+    final_dept = ai_result.get("department") or "General Municipal Department"
+    confidence_str = f"{int(ai_result.get('confidence', 0.95) * 100)}%" if isinstance(ai_result.get('confidence'), float) else str(ai_result.get('confidence', '95%'))
 
     # 3. Check duplicate detection against existing complaints
     existing_all = db.query(Complaint).all()
     dup_res = find_duplicate(
-        new_issue=detected_issue or final_category,
+        new_issue=category,
         new_lat=latitude or 23.3441,
         new_lng=longitude or 85.3096,
-        existing_complaints=[{"id": c.id, "category": c.category, "issue": c.category, "lat": c.latitude, "lng": c.longitude} for c in existing_all]
+        existing_complaints=[{"id": c.id, "category": c.category, "lat": c.latitude, "lng": c.longitude} for c in existing_all]
     )
 
     duplicate_group_id = dup_res.get("duplicate_of") if dup_res.get("is_duplicate") else None
 
     # 4. Generate complaint ID
-    prefix = PREFIX_MAP.get(final_category, "CIV")
+    prefix = PREFIX_MAP.get(category, "CIV")
     complaint_id = f"{prefix}-{uuid.uuid4().hex[:6].upper()}"
 
     reporter_name = current_user.full_name if current_user else "You (Citizen)"
@@ -195,7 +138,7 @@ async def create_complaint(
         id=complaint_id,
         title=final_title,
         description=description or f"{final_title} reported in {district}.",
-        category=final_category,
+        category=category,
         district=district,
         ward=ward,
         location_name=location or f"{district}, Jharkhand",

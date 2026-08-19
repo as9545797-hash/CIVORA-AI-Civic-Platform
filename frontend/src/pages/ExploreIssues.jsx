@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useCivic } from "../context/CivicContext";
 import CivicMap from "../components/CivicMap";
+import { JHARKHAND_DISTRICTS } from "../constants/districts";
 
 function ExploreIssues() {
   const { issues, upvotedIds, toggleUpvote } = useCivic();
@@ -87,7 +88,9 @@ function ExploreIssues() {
               <option value="all">All Categories</option>
               <option value="road">🕳️ Roads & Potholes</option>
               <option value="garbage">🗑️ Waste & Sanitation</option>
+              <option value="water">🚰 Water Leakage</option>
               <option value="streetlight">💡 Streetlights</option>
+              <option value="public-space">🌳 Public Spaces</option>
             </select>
           </div>
 
@@ -98,11 +101,9 @@ function ExploreIssues() {
               onChange={(e) => setSelectedDistrict(e.target.value)}
             >
               <option value="all">All Districts</option>
-              <option value="Ranchi">Ranchi</option>
-              <option value="Jamshedpur">Jamshedpur</option>
-              <option value="Dhanbad">Dhanbad</option>
-              <option value="Bokaro">Bokaro</option>
-              <option value="Hazaribagh">Hazaribagh</option>
+              {JHARKHAND_DISTRICTS.map((d) => (
+                <option key={d} value={d}>{d}</option>
+              ))}
             </select>
           </div>
 

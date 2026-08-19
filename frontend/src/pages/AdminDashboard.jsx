@@ -77,7 +77,7 @@ function AdminDashboard() {
 
       {!backendOnline && (
         <div className="action-banner rejected" style={{ marginBottom: "1.5rem" }}>
-          ⚠️ Backend server (http://localhost:8000) is offline. Actions will update locally.
+          ⚠️ Backend server is offline. Actions will update locally.
         </div>
       )}
 

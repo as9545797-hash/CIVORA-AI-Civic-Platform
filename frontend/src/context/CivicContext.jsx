@@ -43,7 +43,7 @@ export function CivicProvider({ children }) {
     } catch (err) {
       console.warn("Backend server offline or unreachable. Falling back to local data:", err.message);
       setBackendOnline(false);
-      setError("Unable to connect to backend server (http://localhost:8000). Showing cached / fallback civic data.");
+      setError("Unable to connect to CIVORA backend server. Showing cached / fallback civic data.");
     } finally {
       setLoading(false);
     }

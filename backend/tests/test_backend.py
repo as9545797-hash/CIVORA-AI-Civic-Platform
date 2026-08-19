@@ -75,12 +75,13 @@ def test_3_4_5_6_submit_complaint_image_upload_ai_predict_store_db():
     )
     assert ai_res.status_code == 200
     predict_data = ai_res.json()
-    assert "is_civic_issue" in predict_data
     assert "issue" in predict_data
     assert "confidence" in predict_data
-    assert predict_data["confidence"] == 0.0 or predict_data["is_civic_issue"] is True
+    assert "priority" in predict_data
+    assert "department" in predict_data
 
-    # Submit Complaint without image (manual flow for test data)
+    # Submit Complaint with Image Upload
+    dummy_image_2 = BytesIO(b"complaint photo data")
     complaint_res = client.post(
         "/api/complaints",
         data={
@@ -91,6 +92,7 @@ def test_3_4_5_6_submit_complaint_image_upload_ai_predict_store_db():
             "ward": "Ward 5",
             "location": "Sector 4, Bokaro"
         },
+        files={"image_file": ("lamp.jpg", dummy_image_2, "image/jpeg")}
     )
     assert complaint_res.status_code == 201
     c_data = complaint_res.json()
@@ -98,7 +100,7 @@ def test_3_4_5_6_submit_complaint_image_upload_ai_predict_store_db():
     assert c_data["title"] == "Broken Street Lamp Near Main Gate"
     assert c_data["category"] == "streetlight"
     assert c_data["status"] == "Reported"
-    assert c_data["beforeImage"] is not None
+    assert c_data["beforeImage"].startswith("/uploads/")
 
 
 def test_7_assign_department():
@@ -183,3 +185,50 @@ def test_12_notifications():
     read_res = client.put(f"/api/notifications/{target_notif['id']}/read")
     assert read_res.status_code == 200
     assert read_res.json()["is_read"] is True
+
+
+def test_13_ai_predict_schema_and_routing():
+    # Test valid image with expected_category = 'garbage'
+    uploads_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "uploads")
+    sample_garbage = os.path.join(uploads_dir, "complaint_04af33f84e.jpg")
+
+    if os.path.exists(sample_garbage):
+        with open(sample_garbage, "rb") as img_file:
+            res = client.post(
+                "/api/predict",
+                files={"file": ("garbage.jpg", img_file, "image/jpeg")},
+                data={"expected_category": "garbage"}
+            )
+        assert res.status_code == 200
+        data = res.json()
+        assert "is_civic_issue" in data
+        assert "category" in data
+        assert "reason" in data
+        assert "analysis_time_seconds" in data
+        assert data["is_civic_issue"] is True
+        assert data["category"] == "garbage"
+        assert data["issue"] == "Garbage"
+
+
+def test_14_non_civic_image_rejection():
+    # Create a small blank image (low variance/contrast or invalid dimensions)
+    from PIL import Image
+    from io import BytesIO
+
+    # Blank white image representing non-civic / invalid visual
+    blank_img = Image.new("RGB", (200, 200), color=(255, 255, 255))
+    buffer = BytesIO()
+    blank_img.save(buffer, format="JPEG")
+    buffer.seek(0)
+
+    res = client.post(
+        "/api/predict",
+        files={"file": ("blank.jpg", buffer, "image/jpeg")}
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["is_civic_issue"] is False
+    assert data["issue"] == "Not a Civic Issue"
+    assert data["category"] is None
+    assert "reason" in data
+

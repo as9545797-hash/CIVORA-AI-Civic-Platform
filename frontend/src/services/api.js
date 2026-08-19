@@ -1,4 +1,4 @@
-const API_BASE = "https://civora-backend-omxf.onrender.com";
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 const API_URL = `${API_BASE}/api`;
 
 // Helper for Authorization Headers
@@ -10,7 +10,7 @@ function getAuthHeaders(extraHeaders = {}) {
   };
 }
 
-// Helper to format image URLs (prefix relative backend /uploads with https://civora-backend-omxf.onrender.com)
+// Helper to format image URLs (prefix relative backend /uploads with http://localhost:8000)
 export function formatImageUrl(url) {
   if (!url) return null;
   if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("blob:")) {
@@ -92,9 +92,12 @@ export async function getMe() {
 
 // ================= AI PREDICTION API =================
 
-export async function predictAIVision(imageFile) {
+export async function predictAIVision(imageFile, expectedCategory = "") {
   const formData = new FormData();
   formData.append("file", imageFile);
+  if (expectedCategory) {
+    formData.append("expected_category", expectedCategory);
+  }
 
   const res = await fetch(`${API_URL}/predict`, {
     method: "POST",

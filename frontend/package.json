@@ -21,5 +21,9 @@
     "@vitejs/plugin-react": "^6.0.4",
     "oxlint": "^1.75.0",
     "vite": "^8.2.0"
+  },
+  "optionalDependencies": {
+    "@rolldown/binding-darwin-arm64": "^1.2.5",
+    "lightningcss-darwin-arm64": "^1.33.0"
   }
 }
