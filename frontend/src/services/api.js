@@ -1,4 +1,4 @@
-const API_BASE = "http://localhost:8000";
+const API_BASE = "https://civora-backend-omxf.onrender.com";
 const API_URL = `${API_BASE}/api`;
 
 // Helper for Authorization Headers
@@ -10,7 +10,7 @@ function getAuthHeaders(extraHeaders = {}) {
   };
 }
 
-// Helper to format image URLs (prefix relative backend /uploads with http://localhost:8000)
+// Helper to format image URLs (prefix relative backend /uploads with https://civora-backend-omxf.onrender.com)
 export function formatImageUrl(url) {
   if (!url) return null;
   if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("blob:")) {
