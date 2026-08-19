@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from .database import engine, Base, SessionLocal
 from .models import User, Complaint, TimelineEvent
 from .auth import hash_password
-from .routers import auth_router, complaints_router, ai_router, notifications_router, admin_router
+from .routers import auth_router, complaints_router, ai_router, notifications_router
 
 # Create Database tables
 Base.metadata.create_all(bind=engine)
@@ -39,7 +39,6 @@ app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 # Include Routers
 app.include_router(auth_router.router)
-app.include_router(admin_router.router)
 app.include_router(complaints_router.router)
 app.include_router(ai_router.router)
 app.include_router(notifications_router.router)

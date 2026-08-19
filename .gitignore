@@ -12,3 +12,6 @@ __pycache__/
 .vscode/
 .idea/
 *.log
+
+backend/uploads/*.jpg
+backend/uploads/temp/

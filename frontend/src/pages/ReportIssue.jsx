@@ -3,6 +3,12 @@ import { useNavigate } from "react-router-dom";
 import { useCivic } from "../context/CivicContext";
 import { predictAIVision } from "../services/api";
 
+const CATEGORY_OPTIONS = [
+  { value: "road", label: "🕳️ Road / Pothole" },
+  { value: "garbage", label: "🗑️ Garbage / Waste" },
+  { value: "streetlight", label: "💡 Streetlight / Electrical" },
+];
+
 function ReportIssue() {
   const navigate = useNavigate();
   const { addIssue, backendOnline } = useCivic();
@@ -19,7 +25,6 @@ function ReportIssue() {
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
 
-  // IMAGE UPLOAD
   const handleImageChange = (event) => {
     const file = event.target.files[0];
     if (file) {
@@ -30,7 +35,6 @@ function ReportIssue() {
     }
   };
 
-  // DETECT LOCATION
   const detectLocation = () => {
     if (!navigator.geolocation) {
       alert("Location is not supported by your browser.");
@@ -52,15 +56,14 @@ function ReportIssue() {
     );
   };
 
-  // AI ANALYSIS (Calls Backend /api/predict)
   const analyzeIssue = async () => {
     if (!imagePreview && !rawFile) {
       alert("Please upload an issue photo first.");
       return;
     }
 
-    if (!category) {
-      alert("Please select an issue category.");
+    if (!backendOnline) {
+      setErrorMessage("Backend server is unreachable. AI analysis requires an active connection.");
       return;
     }
 
@@ -69,78 +72,48 @@ function ReportIssue() {
     setErrorMessage(null);
 
     try {
-      if (rawFile && backendOnline) {
-        // Call FastAPI YOLO endpoint
-        const aiData = await predictAIVision(rawFile);
-        const confidenceFormatted =
-          typeof aiData.confidence === "number"
-            ? `${Math.round(aiData.confidence * 100)}%`
-            : String(aiData.confidence || "95%");
+      const aiData = await predictAIVision(rawFile);
 
+      if (!aiData.is_civic_issue) {
         setResult({
-          issue: aiData.issue || (category === "road" ? "Pothole / Road Damage" : category === "garbage" ? "Garbage Accumulation" : "Civic Issue"),
-          confidence: confidenceFormatted,
-          priority: aiData.priority || "High",
-          department: aiData.department || "Public Works Department (PWD)",
+          isCivicIssue: false,
+          issue: aiData.issue || "Not a Civic Issue",
+          message:
+            aiData.message ||
+            "This image does not appear to contain a supported civic issue. Please upload a photo of a pothole, garbage accumulation, or damaged streetlight.",
         });
-      } else {
-        // Offline heuristic fallback simulation
-        setTimeout(() => {
-          let issue = "Civic Issue";
-          let priority = "Medium";
-          let department = "General Civic Department";
-
-          if (category === "road") {
-            issue = "Pothole / Road Damage";
-            priority = "High";
-            department = "Public Works Department (PWD)";
-          } else if (category === "garbage") {
-            issue = "Garbage / Waste Accumulation";
-            priority = "High";
-            department = "Municipal Sanitation Department";
-          } else if (category === "streetlight") {
-            issue = "Broken Streetlight";
-            priority = "Medium";
-            department = "Electrical Wing";
-          } else if (category === "water") {
-            issue = "Water Leakage / Pipe Damage";
-            priority = "Critical";
-            department = "Water Supply & Sewerage Board";
-          } else if (category === "public-space") {
-            issue = "Public Space / Facility Defect";
-            priority = "Medium";
-            department = "Parks & Horticulture Department";
-          } else {
-            issue = "Other Civic Problem";
-            priority = "Low";
-            department = "General Municipal Department";
-          }
-
-          setResult({
-            issue,
-            confidence: "95%",
-            priority,
-            department
-          });
-        }, 1000);
+        return;
       }
-    } catch (err) {
-      console.warn("AI analysis API failed, showing client model fallback:", err);
+
+      const confidenceFormatted =
+        typeof aiData.confidence === "number"
+          ? `${Math.round(aiData.confidence * 100)}%`
+          : String(aiData.confidence || "0%");
+
+      const detectedCategory = aiData.category || category;
+      if (detectedCategory) {
+        setCategory(detectedCategory);
+      }
+
       setResult({
-        issue: category === "road" ? "Pothole / Road Damage" : "Civic Issue",
-        confidence: "92%",
-        priority: "High",
-        department: "Public Works Department (PWD)"
+        isCivicIssue: true,
+        issue: aiData.issue,
+        confidence: confidenceFormatted,
+        priority: aiData.priority,
+        department: aiData.department,
+        category: detectedCategory,
       });
+    } catch (err) {
+      console.warn("AI analysis API failed:", err);
+      setErrorMessage(err.message || "AI analysis failed. Please try again with a clearer photo.");
     } finally {
       setAnalyzing(false);
     }
   };
 
-  // FINAL SUBMISSION TO BACKEND
   const handleSubmitIssue = async () => {
-    if (!result) {
-      alert("Please analyze the issue first.");
+    if (!result || !result.isCivicIssue) {
+      alert("Please analyze a supported civic issue photo first.");
       return;
     }
 
@@ -151,13 +124,10 @@ function ReportIssue() {
       const formData = new FormData();
       formData.append("title", result.issue);
       formData.append("description", description || `${result.issue} reported in ${district}.`);
-      formData.append("category", category);
+      formData.append("category", result.category || category);
       formData.append("district", district);
       formData.append("ward", "Ward 1");
       formData.append("location", location || `${district}, Jharkhand`);
-      formData.append("priority", result.priority);
-      formData.append("department", result.department);
-      formData.append("confidence", result.confidence);
 
       if (rawFile) {
         formData.append("image_file", rawFile);
@@ -178,17 +148,16 @@ function ReportIssue() {
 
   return (
     <div className="report-page">
-      {/* HEADER */}
       <div className="report-header">
         <h1>Report a Civic Issue</h1>
         <p>
-          Upload a photo of the civic problem. CIVORA's AI vision engine will analyze the issue, determine severity, and route it to the appropriate Jharkhand department.
+          Upload a photo of a pothole, garbage accumulation, or damaged streetlight. CIVORA's AI vision engine will verify the issue, determine severity, and route it to the appropriate Jharkhand department.
         </p>
       </div>
 
       {!backendOnline && (
         <div className="action-banner rejected" style={{ marginBottom: "1.5rem" }}>
-          ⚠️ Backend server unreachable. Report will be saved locally.
+          ⚠️ Backend server unreachable. AI analysis and complaint submission require the backend.
         </div>
       )}
 
@@ -208,9 +177,8 @@ function ReportIssue() {
         </div>
       ) : (
         <div className="report-card">
-          {/* PHOTO UPLOAD */}
           <h2>📸 Upload Issue Photo</h2>
-          <p className="small-text">Take or choose a clear photo of the civic problem.</p>
+          <p className="small-text">Take or choose a clear photo of a pothole, garbage, or streetlight issue.</p>
 
           <label className="upload-box">
             {imagePreview ? (
@@ -235,22 +203,20 @@ function ReportIssue() {
             />
           </label>
 
-          {/* CATEGORY & DISTRICT */}
           <div className="form-grid">
             <div className="form-section">
-              <label>Issue Category *</label>
+              <label>Expected Issue Type (optional hint)</label>
               <select
                 className="category-select"
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
               >
-                <option value="">Select issue category...</option>
-                <option value="road">🕳️ Road / Pothole</option>
-                <option value="garbage">🗑️ Garbage / Waste</option>
-                <option value="streetlight">💡 Streetlight / Electrical</option>
-                <option value="water">🚰 Water Leakage / Drainage</option>
-                <option value="public-space">🌳 Public Space / Parks</option>
-                <option value="other">📌 Other Civic Issue</option>
+                <option value="">AI will detect automatically...</option>
+                {CATEGORY_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -270,7 +236,6 @@ function ReportIssue() {
             </div>
           </div>
 
-          {/* DESCRIPTION */}
           <div className="form-section">
             <label>Description & Notes</label>
             <textarea
@@ -281,7 +246,6 @@ function ReportIssue() {
             />
           </div>
 
-          {/* LOCATION */}
           <div className="form-section">
             <label>Location Details</label>
             <div className="location-row">
@@ -302,18 +266,25 @@ function ReportIssue() {
             </div>
           </div>
 
-          {/* ANALYZE BUTTON */}
           <button
             type="button"
             className="analyze-btn"
             onClick={analyzeIssue}
-            disabled={analyzing}
+            disabled={analyzing || !rawFile}
           >
             {analyzing ? "🤖 Running AI Vision Model..." : "🤖 Run AI Vision Analysis"}
           </button>
 
-          {/* AI RESULT CARD */}
-          {result && (
+          {result && !result.isCivicIssue && (
+            <div className="ai-result rejected-result">
+              <div className="ai-result-header">
+                <h2>❌ Not a Civic Issue</h2>
+              </div>
+              <p className="rejection-message">{result.message}</p>
+            </div>
+          )}
+
+          {result && result.isCivicIssue && (
             <div className="ai-result">
               <div className="ai-result-header">
                 <h2>🤖 AI Analysis Complete</h2>

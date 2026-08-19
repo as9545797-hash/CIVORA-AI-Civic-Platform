@@ -80,7 +80,7 @@ function VerifyResolution() {
 
       {!backendOnline && (
         <div className="action-banner rejected" style={{ marginBottom: "1.5rem" }}>
-          ⚠️ Backend server (https://civora-backend-omxf.onrender.com) is offline. Verification will update locally.
+          ⚠️ Backend server (http://localhost:8000) is offline. Verification will update locally.
         </div>
       )}
 

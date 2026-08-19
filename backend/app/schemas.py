@@ -32,19 +32,6 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     user: UserResponse
 
-class AdminUserResponse(BaseModel):
-    id: int
-    full_name: str
-    email: str
-    phone: Optional[str] = None
-    district: Optional[str] = "Ranchi"
-    role: str = "citizen"
-    created_at: Optional[str] = None
-    complaint_count: int = 0
-
-    class Config:
-        from_attributes = True
-
 # Timeline Schema
 class TimelineEventSchema(BaseModel):
     step: str
@@ -115,11 +102,14 @@ class CitizenVerification(BaseModel):
 
 # AI Prediction Schema (Matching Member 1's OpenAPI doc)
 class AIPredictResponse(BaseModel):
+    is_civic_issue: bool
     issue: Optional[str]
     confidence: float
-    priority: Optional[str]
-    department: Optional[str]
-    duplicate_group: Optional[str]
+    priority: Optional[str] = None
+    department: Optional[str] = None
+    duplicate_group: Optional[str] = None
+    message: Optional[str] = None
+    category: Optional[str] = None
 
 # Notification Schema
 class NotificationResponse(BaseModel):

@@ -87,9 +87,7 @@ function ExploreIssues() {
               <option value="all">All Categories</option>
               <option value="road">🕳️ Roads & Potholes</option>
               <option value="garbage">🗑️ Waste & Sanitation</option>
-              <option value="water">🚰 Water Leakage</option>
               <option value="streetlight">💡 Streetlights</option>
-              <option value="public-space">🌳 Public Spaces</option>
             </select>
           </div>
 

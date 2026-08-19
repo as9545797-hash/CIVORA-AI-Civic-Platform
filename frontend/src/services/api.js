@@ -1,4 +1,4 @@
-const API_BASE = "https://civora-backend-omxf.onrender.com";
+const API_BASE = "http://localhost:8000";
 const API_URL = `${API_BASE}/api`;
 
 // Helper for Authorization Headers
@@ -10,7 +10,7 @@ function getAuthHeaders(extraHeaders = {}) {
   };
 }
 
-// Helper to format image URLs (prefix relative backend /uploads with https://civora-backend-omxf.onrender.com)
+// Helper to format image URLs (prefix relative backend /uploads with http://localhost:8000)
 export function formatImageUrl(url) {
   if (!url) return null;
   if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("blob:")) {
@@ -218,17 +218,3 @@ export async function markNotificationReadApi(notificationId) {
   if (!res.ok) return null;
   return res.json();
 }
-
-// ================= ADMIN APIs =================
-
-export async function fetchRegisteredUsersApi() {
-  const res = await fetch(`${API_URL}/admin/users`, {
-    headers: getAuthHeaders()
-  });
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({ detail: "Failed to fetch registered citizens" }));
-    throw new Error(errorData.detail || "Failed to fetch registered citizens");
-  }
-  return res.json();
-}
-
