@@ -26,19 +26,17 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 CATEGORY_LABEL_MAP = {
     "road": "🕳️ Road / Pothole",
     "garbage": "🗑️ Garbage / Waste",
+    "sanitation": "🗑️ Garbage / Waste",
     "streetlight": "💡 Streetlight / Electrical",
-    "water": "🚰 Water Leakage / Drainage",
-    "public-space": "🌳 Public Space / Parks",
-    "other": "📌 Other Civic Issue"
+    "electrical": "💡 Streetlight / Electrical",
 }
 
 PREFIX_MAP = {
     "road": "PTH",
     "garbage": "GBG",
+    "sanitation": "GBG",
     "streetlight": "STL",
-    "water": "WTR",
-    "public-space": "PRK",
-    "other": "CIV"
+    "electrical": "STL",
 }
 
 def format_complaint_dict(c: Complaint) -> dict:

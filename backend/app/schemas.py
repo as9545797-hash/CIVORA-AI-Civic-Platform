@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import List, Optional
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 
 # Auth Schemas
 class UserRegister(BaseModel):
@@ -112,6 +112,13 @@ class AIPredictResponse(BaseModel):
     message: Optional[str] = None
     duplicate_group: Optional[str] = None
     analysis_time_seconds: Optional[float] = None
+
+    @field_validator("confidence")
+    @classmethod
+    def validate_confidence(cls, value: float) -> float:
+        if value is None:
+            return 0.0
+        return max(0.0, min(1.0, float(value)))
 
 # Notification Schema
 class NotificationResponse(BaseModel):

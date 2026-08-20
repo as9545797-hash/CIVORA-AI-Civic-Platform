@@ -206,8 +206,8 @@ def test_13_ai_predict_schema_and_routing():
         assert "reason" in data
         assert "analysis_time_seconds" in data
         assert data["is_civic_issue"] is True
-        assert data["category"] == "garbage"
-        assert data["issue"] == "Garbage"
+        assert data["category"] == "sanitation"
+        assert data["issue"] == "Garbage / Waste"
 
 
 def test_14_non_civic_image_rejection():
