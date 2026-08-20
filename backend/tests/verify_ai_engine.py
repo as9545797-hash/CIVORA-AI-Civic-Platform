@@ -75,8 +75,8 @@ def run_verification():
     print(f"  total request time: {t2_ms:.2f} ms ({d2.get('analysis_time_seconds')}s)")
     assert res2.status_code == 200
     assert d2.get("is_civic_issue") is True
-    assert d2.get("issue") == "Garbage / Waste"
-    assert d2.get("category") == "sanitation"
+    assert d2.get("issue") == "Garbage"
+    assert d2.get("category") == "garbage"
 
     # TEST 3: Streetlight + expected_category=streetlight
     print("\n--------------------------------------------------")
@@ -99,8 +99,8 @@ def run_verification():
     print(f"  total request time: {t3_ms:.2f} ms ({d3.get('analysis_time_seconds')}s)")
     assert res3.status_code == 200
     assert d3.get("is_civic_issue") is True
-    assert d3.get("issue") == "Streetlight / Electrical"
-    assert d3.get("category") == "electrical"
+    assert d3.get("issue") == "Streetlight"
+    assert d3.get("category") == "streetlight"
 
     # TEST 4: Clearly unrelated image + automatic mode
     print("\n--------------------------------------------------")

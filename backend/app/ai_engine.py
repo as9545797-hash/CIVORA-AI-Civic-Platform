@@ -2,7 +2,7 @@ import os
 import time
 import math
 import logging
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional
 
 # Prevent Matplotlib from freezing on macOS system font scan or creating temp directories
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -35,70 +35,31 @@ _garbage_model = None
 _pothole_model = None
 _streetlight_model = None
 
-# Internal model keys mapped to user-facing labels and API categories
-ISSUE_CONFIG: Dict[str, Dict[str, str]] = {
-    "Pothole": {
-        "issue": "Pothole",
-        "category": "road",
-        "department": "Public Works Department (PWD)",
-        "reason": "A road-surface depression consistent with a pothole was detected in the uploaded image.",
-        "message": "Pothole detected successfully.",
-    },
-    "Garbage": {
-        "issue": "Garbage / Waste",
-        "category": "sanitation",
-        "department": "Municipal Sanitation Department",
-        "reason": "Accumulated waste or debris consistent with a garbage dumping area was detected in the uploaded image.",
-        "message": "Garbage accumulation detected successfully.",
-    },
-    "Streetlight": {
-        "issue": "Streetlight / Electrical",
-        "category": "electrical",
-        "department": "Electrical Wing",
-        "reason": "A non-functional or damaged streetlight was detected in the uploaded image.",
-        "message": "Streetlight issue detected successfully.",
-    },
-}
-
+# Class-specific confidence thresholds matching empirical model behavior
 CLASS_THRESHOLDS = {
-    "Pothole": 0.60,
-    "Garbage": 0.55,
-    "Streetlight": 0.12,
+    "Pothole": 0.60,       # Pothole model true positive conf ~0.91 vs false positive ~0.52
+    "Garbage": 0.55,       # Garbage model true positive conf ~0.73 at imgsz=640
+    "Streetlight": 0.12    # Streetlight model raw confidence is ~0.15 at imgsz=640
 }
 
+# Class-specific image sizes for optimal inference
 CLASS_IMGSZ = {
     "Pothole": 416,
-    "Garbage": 640,
-    "Streetlight": 640,
+    "Garbage": 640,         # 640px required for garbage model to localize waste & eliminate false positives
+    "Streetlight": 640      # Higher resolution needed for small streetlight objects
 }
 
 MIN_BBOX_AREA_RATIOS = {
-    "Pothole": 0.001,
-    "Garbage": 0.002,
-    "Streetlight": 0.0001,
+    "Pothole": 0.001,       # 0.1% of image area
+    "Garbage": 0.002,       # 0.2% of image area
+    "Streetlight": 0.0001   # 0.01% of image area
 }
-
-CATEGORY_ALIASES = {
-    "road": "Pothole",
-    "pothole": "Pothole",
-    "garbage": "Garbage",
-    "waste": "Garbage",
-    "streetlight": "Streetlight",
-    "light": "Streetlight",
-    "electrical": "Streetlight",
-}
-
-
-def clamp_confidence(value: Optional[float]) -> float:
-    if value is None or not isinstance(value, (int, float)):
-        return 0.0
-    if math.isnan(value) or math.isinf(value):
-        return 0.0
-    return round(max(0.0, min(1.0, float(value))), 3)
 
 
 def load_ai_models() -> bool:
-    """Load YOLO models once at startup and cache in memory."""
+    """
+    Load YOLO models once at startup and cache in memory.
+    """
     global _models_loaded, _garbage_model, _pothole_model, _streetlight_model
     if _models_loaded:
         return True
@@ -108,29 +69,26 @@ def load_ai_models() -> bool:
 
     try:
         from ultralytics import YOLO
-
+        
         if os.path.exists(GARBAGE_MODEL_PATH):
             g_start = time.time()
             _garbage_model = YOLO(GARBAGE_MODEL_PATH)
-            logger.info(f"[AI] Garbage model loaded in {(time.time() - g_start) * 1000:.1f} ms")
+            g_time = (time.time() - g_start) * 1000
+            logger.info(f"[AI] Garbage model loaded in {g_time:.1f} ms")
 
         if os.path.exists(POTHOLE_MODEL_PATH):
             p_start = time.time()
             _pothole_model = YOLO(POTHOLE_MODEL_PATH)
-            logger.info(f"[AI] Pothole model loaded in {(time.time() - p_start) * 1000:.1f} ms")
+            p_time = (time.time() - p_start) * 1000
+            logger.info(f"[AI] Pothole model loaded in {p_time:.1f} ms")
 
         if os.path.exists(STREETLIGHT_MODEL_PATH):
             s_start = time.time()
             _streetlight_model = YOLO(STREETLIGHT_MODEL_PATH)
-            logger.info(f"[AI] Streetlight model loaded in {(time.time() - s_start) * 1000:.1f} ms")
+            s_time = (time.time() - s_start) * 1000
+            logger.info(f"[AI] Streetlight model loaded in {s_time:.1f} ms")
 
         total_time = (time.time() - start_time) * 1000
-        has_any_model = any([_garbage_model, _pothole_model, _streetlight_model])
-        if not has_any_model:
-            logger.error("[AI] No model weight files found in trained_model/")
-            _models_loaded = False
-            return False
-
         logger.info(f"[AI] All models successfully loaded into memory in {total_time:.1f} ms")
         _models_loaded = True
         return True
@@ -141,28 +99,31 @@ def load_ai_models() -> bool:
 
 
 def check_image_quality(image_path: str) -> Dict[str, Any]:
-    """Cheap pre-inference image check for dimensions, corruption, and extreme blur."""
+    """
+    Cheap pre-inference image check for dimensions, corruption, and extreme blur.
+    """
     if not os.path.exists(image_path):
         return {"valid": False, "reason": "Image file not found."}
 
     try:
         with Image.open(image_path) as img:
             img.verify()
-
+        
         with Image.open(image_path) as img:
             width, height = img.size
             if width < 80 or height < 80:
                 return {
                     "valid": False,
-                    "reason": "Image dimensions are too small for reliable analysis.",
+                    "reason": "Image dimensions are too small for reliable analysis."
                 }
-
+            
+            # Convert to grayscale to check variance/blank image
             stat = ImageStat.Stat(img.convert("L"))
             var = stat.var[0] if stat.var else 0.0
-            if var < 5.0:
+            if var < 5.0:  # Extremely flat/blank image
                 return {
                     "valid": False,
-                    "reason": "Image appears blank or has insufficient contrast for analysis.",
+                    "reason": "Image appears blank or has insufficient contrast for analysis."
                 }
 
         return {"valid": True, "reason": "Image quality passed."}
@@ -172,9 +133,10 @@ def check_image_quality(image_path: str) -> Dict[str, Any]:
 
 def calculate_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Haversine distance formula in meters."""
-    R = 6371000
+    R = 6371000  # Earth radius in meters
     dlat = math.radians(lat2 - lat1)
     dlon = math.radians(lon2 - lon1)
+
     a = (
         math.sin(dlat / 2) ** 2
         + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2
@@ -183,126 +145,59 @@ def calculate_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> fl
     return R * c
 
 
-def predict_priority(issue_key: str, confidence: float, bbox_area_ratio: float = 0.01, detection_count: int = 1) -> str:
-    if issue_key == "Pothole":
+def recommend_department(issue: str) -> str:
+    departments = {
+        "Pothole": "Public Works Department (PWD)",
+        "Garbage": "Municipal Sanitation Department",
+        "Streetlight": "Electrical Wing",
+        "Water Leakage": "Water Supply & Sewerage Board",
+        "Drainage": "Municipal Corporation"
+    }
+    return departments.get(issue, "General Municipal Department")
+
+
+def predict_priority(issue: str, confidence: float, bbox_area_ratio: float = 0.01, detection_count: int = 1) -> str:
+    if issue == "Pothole":
         if confidence >= 0.85 or bbox_area_ratio >= 0.05:
             return "High"
-        if confidence >= 0.65 or bbox_area_ratio >= 0.02:
+        elif confidence >= 0.65 or bbox_area_ratio >= 0.02:
             return "Medium"
-        return "Low"
-    if issue_key == "Garbage":
+        else:
+            return "Low"
+    elif issue == "Garbage":
         if detection_count >= 2 or bbox_area_ratio >= 0.08 or confidence >= 0.85:
             return "High"
-        if confidence >= 0.65:
+        elif confidence >= 0.65:
             return "Medium"
-        return "Low"
-    if issue_key == "Streetlight":
+        else:
+            return "Low"
+    elif issue == "Streetlight":
         if confidence >= 0.50 or bbox_area_ratio >= 0.01:
             return "High"
-        if confidence >= 0.25:
+        elif confidence >= 0.25:
             return "Medium"
-        return "Low"
+        else:
+            return "Low"
+
     return "Medium"
-
-
-def _build_response(
-    *,
-    is_civic_issue: bool,
-    issue_key: Optional[str],
-    confidence: float,
-    priority: Optional[str],
-    reason: str,
-    message: str,
-    analysis_time_seconds: float,
-) -> Dict[str, Any]:
-    if is_civic_issue and issue_key:
-        cfg = ISSUE_CONFIG[issue_key]
-        return {
-            "is_civic_issue": True,
-            "issue": cfg["issue"],
-            "category": cfg["category"],
-            "confidence": clamp_confidence(confidence),
-            "priority": priority,
-            "department": cfg["department"],
-            "reason": reason or cfg["reason"],
-            "message": message or cfg["message"],
-            "duplicate_group": None,
-            "analysis_time_seconds": round(analysis_time_seconds, 3),
-        }
-
-    return {
-        "is_civic_issue": False,
-        "issue": "Not a Civic Issue",
-        "category": None,
-        "confidence": clamp_confidence(confidence),
-        "priority": None,
-        "department": None,
-        "reason": reason,
-        "message": message,
-        "duplicate_group": None,
-        "analysis_time_seconds": round(analysis_time_seconds, 3),
-    }
-
-
-def _select_target_models(expected_category: Optional[str]) -> Tuple[Dict[str, Any], str]:
-    normalized = (expected_category or "").strip().lower()
-    models: Dict[str, Any] = {}
-
-    if normalized in ["road", "pothole"]:
-        if _pothole_model:
-            models["Pothole"] = _pothole_model
-        return models, "explicit:road"
-
-    if normalized in ["garbage", "waste"]:
-        if _garbage_model:
-            models["Garbage"] = _garbage_model
-        return models, "explicit:garbage"
-
-    if normalized in ["streetlight", "light", "electrical"]:
-        if _streetlight_model:
-            models["Streetlight"] = _streetlight_model
-        return models, "explicit:streetlight"
-
-    if normalized in ["water", "drainage", "public-space", "parks", "other"]:
-        return {}, f"unsupported:{normalized}"
-
-    if _pothole_model:
-        models["Pothole"] = _pothole_model
-    if _garbage_model:
-        models["Garbage"] = _garbage_model
-    if _streetlight_model:
-        models["Streetlight"] = _streetlight_model
-    return models, "auto"
 
 
 def run_civora_ai(image_path: str, expected_category: Optional[str] = None) -> Dict[str, Any]:
     """
-    Optimized AI prediction pipeline using cached YOLO models.
-    The uploaded image always drives classification; no filename or hardcoded fallbacks.
+    Optimized AI prediction pipeline.
+    Uses cached YOLO models with fast-path execution if expected_category is specified.
     """
     total_start = time.time()
     logger.info("[AI] REQUEST RECEIVED")
-    logger.info(f"[AI] image_path = {image_path}")
     logger.info(f"[AI] expected_category = {expected_category}")
 
+    # Measure model loading time (0ms if already cached)
     load_start = time.time()
-    models_ready = load_ai_models()
+    load_ai_models()
     load_time_ms = (time.time() - load_start) * 1000
     logger.info(f"[AI] model initialization = {load_time_ms:.1f} ms")
 
-    if not models_ready:
-        elapsed = time.time() - total_start
-        logger.error("[AI] decision = ERROR (models unavailable)")
-        return _build_response(
-            is_civic_issue=False,
-            issue_key=None,
-            confidence=0.0,
-            priority=None,
-            reason="AI inference models could not be loaded. Unable to analyze the uploaded image.",
-            message="Unable to analyze image at this time. Please try again later.",
-            analysis_time_seconds=elapsed,
-        )
-
+    # Image reading & Pre-inference quality check
     prep_start = time.time()
     quality = check_image_quality(image_path)
     prep_time_ms = (time.time() - prep_start) * 1000
@@ -312,16 +207,21 @@ def run_civora_ai(image_path: str, expected_category: Optional[str] = None) -> D
     if not quality["valid"]:
         elapsed = time.time() - total_start
         logger.info(f"[AI] decision = REJECT (Invalid Image: {quality['reason']})")
-        return _build_response(
-            is_civic_issue=False,
-            issue_key=None,
-            confidence=0.0,
-            priority=None,
-            reason=f"Image quality check failed: {quality['reason']}",
-            message="Image quality is too low for reliable analysis. Please upload a clearer photo.",
-            analysis_time_seconds=elapsed,
-        )
+        logger.info(f"[AI] TOTAL = {(elapsed * 1000):.1f} ms")
+        return {
+            "is_civic_issue": False,
+            "issue": "Not a Civic Issue",
+            "category": None,
+            "confidence": 0.95,
+            "priority": None,
+            "department": None,
+            "reason": f"Image quality check failed: {quality['reason']}",
+            "message": "Image quality is too low for reliable analysis. Please upload a clearer photo.",
+            "duplicate_group": None,
+            "analysis_time_seconds": round(elapsed, 3)
+        }
 
+    # Determine image size for bbox ratio calculations
     image_area = 1.0
     try:
         with Image.open(image_path) as img:
@@ -329,172 +229,221 @@ def run_civora_ai(image_path: str, expected_category: Optional[str] = None) -> D
     except Exception:
         pass
 
-    target_models, mode = _select_target_models(expected_category)
-    logger.info(f"[AI] routing mode = {mode}")
+    # Map expected_category to model selection
+    normalized_category = (expected_category or "").strip().lower()
+    target_models = {}
 
-    if mode.startswith("unsupported:"):
+    if normalized_category in ["road", "pothole"]:
+        logger.info("[AI] Expected category: road")
+        logger.info("[AI] Running pothole model only")
+        if _pothole_model:
+            target_models["Pothole"] = _pothole_model
+    elif normalized_category in ["garbage", "waste"]:
+        logger.info("[AI] Expected category: garbage")
+        logger.info("[AI] Running garbage model only")
+        if _garbage_model:
+            target_models["Garbage"] = _garbage_model
+    elif normalized_category in ["streetlight", "light", "electrical"]:
+        logger.info("[AI] Expected category: streetlight")
+        logger.info("[AI] Running streetlight model only")
+        if _streetlight_model:
+            target_models["Streetlight"] = _streetlight_model
+    elif normalized_category in ["water", "drainage", "public-space", "parks", "other"]:
+        # Explicit non-supported category selected by user
+        logger.info(f"[AI] Expected category: {normalized_category} (Non-YOLO category)")
         elapsed = time.time() - total_start
-        selected = mode.split(":", 1)[1]
-        logger.info(f"[AI] decision = REJECT (unsupported category: {selected})")
-        return _build_response(
-            is_civic_issue=False,
-            issue_key=None,
-            confidence=0.0,
-            priority=None,
-            reason=(
-                f"The selected category ('{expected_category}') is not supported by automated AI vision. "
-                "Please choose Pothole, Garbage / Waste, or Streetlight / Electrical."
-            ),
-            message="No supported civic issue detected for the selected category.",
-            analysis_time_seconds=elapsed,
-        )
+        logger.info(f"[AI] decision = REJECT (Non-supported vision category: {normalized_category})")
+        logger.info(f"[AI] TOTAL = {(elapsed * 1000):.1f} ms")
+        return {
+            "is_civic_issue": False,
+            "issue": "Not a Civic Issue",
+            "category": None,
+            "confidence": 0.95,
+            "priority": None,
+            "department": None,
+            "reason": f"The selected category ('{expected_category}') is not directly supported by automated AI vision models.",
+            "message": "No supported civic issue detected for the selected category.",
+            "duplicate_group": None,
+            "analysis_time_seconds": round(elapsed, 3)
+        }
+    else:
+        logger.info("[AI] Expected category: Automatic mode")
+        logger.info("[AI] Running all candidate models")
+        if _pothole_model:
+            target_models["Pothole"] = _pothole_model
+        if _garbage_model:
+            target_models["Garbage"] = _garbage_model
+        if _streetlight_model:
+            target_models["Streetlight"] = _streetlight_model
 
-    if not target_models:
-        elapsed = time.time() - total_start
-        logger.error("[AI] decision = ERROR (no models available for selected route)")
-        return _build_response(
-            is_civic_issue=False,
-            issue_key=None,
-            confidence=0.0,
-            priority=None,
-            reason="Required AI model for the selected category is unavailable.",
-            message="Unable to analyze image at this time.",
-            analysis_time_seconds=elapsed,
-        )
-
-    final_detections: List[Dict[str, Any]] = []
-    raw_scores: List[Tuple[str, float]] = []
+    final_detections = []
     total_inference_start = time.time()
 
-    for issue_key, model in target_models.items():
+    for issue_name, model in target_models.items():
         m_start = time.time()
         try:
-            min_conf = CLASS_THRESHOLDS.get(issue_key, 0.50)
-            imgsz = CLASS_IMGSZ.get(issue_key, 416)
-            predict_conf = 0.10 if issue_key == "Streetlight" else 0.25
-
-            results = model.predict(
-                source=image_path,
-                conf=predict_conf,
-                imgsz=imgsz,
-                device="cpu",
-                verbose=False,
-            )
+            min_conf = CLASS_THRESHOLDS.get(issue_name, 0.50)
+            imgsz = CLASS_IMGSZ.get(issue_name, 416)
+            
+            # Lower detection conf threshold during predict call so we capture low-confidence streetlights if needed
+            predict_conf = 0.10 if issue_name == "Streetlight" else 0.25
+            
+            results = model.predict(source=image_path, conf=predict_conf, imgsz=imgsz, device="cpu", verbose=False)
             m_time = (time.time() - m_start) * 1000
-            logger.info(f"[AI] {issue_key} inference = {m_time:.1f} ms (imgsz={imgsz})")
+            logger.info(f"[AI] {issue_name} inference = {m_time:.1f} ms (imgsz={imgsz})")
 
-            best_raw_for_model = 0.0
             for result in results:
-                if result.boxes is None:
-                    continue
-                for box in result.boxes:
-                    confidence = float(box.conf[0])
-                    best_raw_for_model = max(best_raw_for_model, confidence)
-                    x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
-                    bbox_area = float((x2 - x1) * (y2 - y1))
-                    bbox_ratio = bbox_area / image_area if image_area > 0 else 0.001
-                    min_ratio = MIN_BBOX_AREA_RATIOS.get(issue_key, 0.0001)
+                if result.boxes is not None:
+                    for box in result.boxes:
+                        confidence = float(box.conf[0])
+                        x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
+                        bbox_area = float((x2 - x1) * (y2 - y1))
+                        bbox_ratio = bbox_area / image_area if image_area > 0 else 0.001
 
-                    if confidence >= min_conf and bbox_ratio >= min_ratio:
-                        final_detections.append({
-                            "issue_key": issue_key,
-                            "confidence": round(confidence, 3),
-                            "bbox": [x1, y1, x2, y2],
-                            "bbox_ratio": round(bbox_ratio, 5),
-                        })
+                        min_ratio = MIN_BBOX_AREA_RATIOS.get(issue_name, 0.0001)
 
-            if best_raw_for_model > 0:
-                raw_scores.append((issue_key, best_raw_for_model))
-                logger.info(f"[AI] {issue_key} best raw confidence = {best_raw_for_model:.3f}")
+                        if confidence >= min_conf and bbox_ratio >= min_ratio:
+                            final_detections.append({
+                                "issue": issue_name,
+                                "confidence": round(confidence, 3),
+                                "bbox": [x1, y1, x2, y2],
+                                "bbox_ratio": round(bbox_ratio, 5)
+                            })
         except Exception as e:
-            logger.error(f"[AI] {issue_key} prediction error: {e}")
+            logger.error(f"[AI] {issue_name} prediction error: {e}")
 
     total_inference_time = (time.time() - total_inference_start) * 1000
     logger.info(f"[AI] inference = {total_inference_time:.1f} ms")
 
+    # Decision & Postprocessing Pipeline
     post_start = time.time()
 
-    if final_detections:
-        issue_counts: Dict[str, int] = {}
-        for d in final_detections:
-            issue_counts[d["issue_key"]] = issue_counts.get(d["issue_key"], 0) + 1
+    category_map = {
+        "Pothole": "road",
+        "Garbage": "garbage",
+        "Streetlight": "streetlight"
+    }
+    reasons = {
+        "Pothole": "A road-surface depression consistent with a pothole was detected.",
+        "Garbage": "Accumulated waste/debris consistent with a garbage dumping area was detected.",
+        "Streetlight": "A non-functional or damaged streetlight was detected."
+    }
+    messages = {
+        "Pothole": "Pothole detected successfully.",
+        "Garbage": "Garbage accumulation detected successfully.",
+        "Streetlight": "Streetlight issue detected successfully."
+    }
 
+    # Deterministic Explicit Category Mode Decision
+    if normalized_category and final_detections:
         best_detection = max(final_detections, key=lambda x: x["confidence"])
-        best_issue_key = best_detection["issue_key"]
+        best_issue = best_detection["issue"]
         best_conf = best_detection["confidence"]
         best_ratio = best_detection["bbox_ratio"]
 
-        unique_classes = set(d["issue_key"] for d in final_detections)
-        if len(unique_classes) > 1 and mode == "auto":
-            sorted_confs = sorted([d["confidence"] for d in final_detections], reverse=True)
-            if len(sorted_confs) >= 2 and (sorted_confs[0] - sorted_confs[1]) < 0.20:
-                elapsed = time.time() - total_start
-                logger.info("[AI] decision = REJECT ambiguous conflicting detections")
-                return _build_response(
-                    is_civic_issue=False,
-                    issue_key=None,
-                    confidence=clamp_confidence(sorted_confs[0]),
-                    priority=None,
-                    reason="The image contains ambiguous visual evidence across multiple issue types. Please upload a clearer photo.",
-                    message="Unable to classify confidently.",
-                    analysis_time_seconds=elapsed,
-                )
+        category = category_map.get(best_issue, "road")
+        priority = predict_priority(best_issue, best_conf, best_ratio, 1)
+        department = recommend_department(best_issue)
+        reason = reasons.get(best_issue, f"{best_issue} detected.")
+        message = messages.get(best_issue, f"{best_issue} detected.")
 
-        cfg = ISSUE_CONFIG[best_issue_key]
-        priority = predict_priority(
-            best_issue_key,
-            best_conf,
-            best_ratio,
-            issue_counts.get(best_issue_key, 1),
-        )
-        reason = (
-            f"{cfg['reason']} Detection confidence: {best_conf:.0%}."
-        )
-        elapsed = time.time() - total_start
         post_time_ms = (time.time() - post_start) * 1000
+        elapsed = time.time() - total_start
         logger.info(f"[AI] postprocessing = {post_time_ms:.1f} ms")
-        logger.info(f"[AI] decision = ACCEPT ({cfg['issue']}, conf={best_conf})")
+        logger.info(f"[AI] decision = ACCEPT explicit category ({best_issue}, conf={best_conf})")
         logger.info(f"[AI] TOTAL = {(elapsed * 1000):.1f} ms")
 
-        return _build_response(
-            is_civic_issue=True,
-            issue_key=best_issue_key,
-            confidence=best_conf,
-            priority=priority,
-            reason=reason,
-            message=cfg["message"],
-            analysis_time_seconds=elapsed,
-        )
+        return {
+            "is_civic_issue": True,
+            "issue": best_issue,
+            "category": category,
+            "confidence": best_conf,
+            "priority": priority,
+            "department": department,
+            "reason": reason,
+            "message": message,
+            "duplicate_group": None,
+            "analysis_time_seconds": round(elapsed, 3)
+        }
 
-    # No detections above threshold — use highest raw model score as confidence signal
-    max_raw_conf = max((score for _, score in raw_scores), default=0.0)
-    elapsed = time.time() - total_start
+    # Automatic Multi-Model Decision Mode
+    if final_detections:
+        issue_counts = {}
+        for d in final_detections:
+            issue_counts[d["issue"]] = issue_counts.get(d["issue"], 0) + 1
+
+        best_detection = max(final_detections, key=lambda x: x["confidence"])
+        best_issue = best_detection["issue"]
+        best_conf = best_detection["confidence"]
+        best_ratio = best_detection["bbox_ratio"]
+
+        # Check for ambiguity: multiple conflicting classes with near-identical confidence
+        unique_classes = set(d["issue"] for d in final_detections)
+        if len(unique_classes) > 1:
+            sorted_confs = sorted([d["confidence"] for d in final_detections], reverse=True)
+            if len(sorted_confs) >= 2 and (sorted_confs[0] - sorted_confs[1]) < 0.20:
+                post_time_ms = (time.time() - post_start) * 1000
+                elapsed = time.time() - total_start
+                logger.info(f"[AI] postprocessing = {post_time_ms:.1f} ms")
+                logger.info(f"[AI] decision = REJECT ambiguous conflicting detections")
+                logger.info(f"[AI] TOTAL = {(elapsed * 1000):.1f} ms")
+                return {
+                    "is_civic_issue": False,
+                    "issue": "Not a Civic Issue",
+                    "category": None,
+                    "confidence": 0.95,
+                    "priority": None,
+                    "department": None,
+                    "reason": "The image contains ambiguous visual evidence. Please upload a clearer photo of the issue.",
+                    "message": "Unable to classify confidently.",
+                    "duplicate_group": None,
+                    "analysis_time_seconds": round(elapsed, 3)
+                }
+
+        category = category_map.get(best_issue, "road")
+        priority = predict_priority(best_issue, best_conf, best_ratio, issue_counts.get(best_issue, 1))
+        department = recommend_department(best_issue)
+        reason = reasons.get(best_issue, f"{best_issue} detected.")
+        message = messages.get(best_issue, f"{best_issue} detected.")
+
+        post_time_ms = (time.time() - post_start) * 1000
+        elapsed = time.time() - total_start
+        logger.info(f"[AI] postprocessing = {post_time_ms:.1f} ms")
+        logger.info(f"[AI] decision = ACCEPT auto detection ({best_issue}, conf={best_conf})")
+        logger.info(f"[AI] TOTAL = {(elapsed * 1000):.1f} ms")
+
+        return {
+            "is_civic_issue": True,
+            "issue": best_issue,
+            "category": category,
+            "confidence": best_conf,
+            "priority": priority,
+            "department": department,
+            "reason": reason,
+            "message": message,
+            "duplicate_group": None,
+            "analysis_time_seconds": round(elapsed, 3)
+        }
+
+    # Non-Civic Rejection Response
     post_time_ms = (time.time() - post_start) * 1000
+    elapsed = time.time() - total_start
     logger.info(f"[AI] postprocessing = {post_time_ms:.1f} ms")
-    logger.info(f"[AI] decision = REJECT no reliable detections (max_raw={max_raw_conf:.3f})")
+    logger.info(f"[AI] decision = REJECT no reliable detections above threshold")
     logger.info(f"[AI] TOTAL = {(elapsed * 1000):.1f} ms")
 
-    if mode.startswith("explicit:"):
-        requested = CATEGORY_ALIASES.get((expected_category or "").strip().lower(), expected_category)
-        reason = (
-            f"No reliable evidence of {requested or 'the selected issue'} was found in the uploaded image. "
-            f"Highest model confidence was {max_raw_conf:.0%}."
-        )
-    else:
-        reason = (
-            "No reliable pothole, garbage accumulation, or streetlight issue was detected in the uploaded image. "
-            f"Highest model confidence was {max_raw_conf:.0%}."
-        )
-
-    return _build_response(
-        is_civic_issue=False,
-        issue_key=None,
-        confidence=max_raw_conf,
-        priority=None,
-        reason=reason,
-        message="Image does not appear to contain a supported civic issue.",
-        analysis_time_seconds=elapsed,
-    )
+    return {
+        "is_civic_issue": False,
+        "issue": "Not a Civic Issue",
+        "category": None,
+        "confidence": 0.95,
+        "priority": None,
+        "department": None,
+        "reason": "No reliable pothole, garbage accumulation, or streetlight issue was detected.",
+        "message": "Image does not appear to contain a supported civic issue.",
+        "duplicate_group": None,
+        "analysis_time_seconds": round(elapsed, 3)
+    }
 
 
 def find_duplicate(
@@ -502,7 +451,7 @@ def find_duplicate(
     new_lat: Optional[float],
     new_lng: Optional[float],
     existing_complaints: List[Dict[str, Any]],
-    threshold_meters: float = 100.0,
+    threshold_meters: float = 100.0
 ) -> Dict[str, Any]:
     if new_lat is None or new_lng is None:
         return {"is_duplicate": False, "duplicate_of": None, "distance_meters": None}
@@ -524,9 +473,10 @@ def find_duplicate(
                 return {
                     "is_duplicate": True,
                     "duplicate_of": old.get("id") or old.get("complaint_id"),
-                    "distance_meters": round(distance, 2),
+                    "distance_meters": round(distance, 2)
                 }
         except Exception:
             continue
 
     return {"is_duplicate": False, "duplicate_of": None, "distance_meters": None}
+
